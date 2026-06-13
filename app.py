@@ -11,7 +11,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 bot = telebot.TeleBot(TOKEN)
 
-AMAZON_URL = "https://www.amazon.com.tr/s?me=A21V19159D71X&marketplaceID=A33AVAJ2PDY3EV"
+AMAZON_URL = "https://www.amazon.com.tr/s?me=A215JX4S9CANSO&marketplaceID=A33AVAJ2PDY3EV"
 
 # Amazon'u yanıltmak için farklı tarayıcı kimlikleri listesi
 USER_AGENTS = [
