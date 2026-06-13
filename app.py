@@ -11,8 +11,7 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 SCRAPER_KEY = os.getenv("SCRAPERAPI_KEY")
 
-# Çakışmaları en aza indirmek için threaded=False yapıyoruz.
-# Arka plan işlemlerini zaten kendimiz Thread ile yönettiğimiz için bu çok daha güvenlidir.
+# Çakışmaları minimuma indirmek için threaded=False yapıyoruz.
 bot = telebot.TeleBot(TOKEN, threaded=False)
 
 BASE_URL = "https://www.amazon.com.tr/Amazon-Depo/s?i=warehouse-deals&srs=44219324031&bbn=44219324031&rh=n%3A44219324031&fs=true"
@@ -20,16 +19,18 @@ BASE_URL = "https://www.amazon.com.tr/Amazon-Depo/s?i=warehouse-deals&srs=442193
 urun_hafizasi = {}
 
 def get_amazon_page(page_number):
+    """ScraperAPI kullanarak sayfayı çeker, timeout süresini 60 saniyeye çıkarır"""
     page_url = f"{BASE_URL}&page={page_number}"
     try:
         if not SCRAPER_KEY:
             headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-            return requests.get(page_url, headers=headers, timeout=15)
+            return requests.get(page_url, headers=headers, timeout=20)
         
         proxy_url = f"http://api.scraperapi.com?api_key={SCRAPER_KEY}&url={page_url}&country_code=tr"
-        return requests.get(proxy_url, timeout=30)
+        # Zaman aşımı süresini (timeout) 60 saniyeye yükselterek ScraperAPI'ye zaman tanıyoruz
+        return requests.get(proxy_url, timeout=60)
     except Exception as e:
-        print(f"Bağlantı hatası (Sayfa {page_number}): {e}")
+        print(f"⚠️ Bağlantı zaman aşımı veya hatası (Sayfa {page_number}): {e}")
         return None
 
 def telegram_tasarimli_mesaj_gonder(chat_id, urun_bilgisi, durum_mesaji="🆕 YENİ ÜRÜN BULDUM!"):
@@ -93,6 +94,7 @@ def magazayi_bastan_basa_tara(manuel_mod=False, message_object=None):
 
     while True:
         response = get_amazon_page(current_page)
+        # Sayfa çekilemediyse veya timeout olduysa bir sonraki tura kadar durdur
         if not response or response.status_code != 200:
             break
             
@@ -125,18 +127,18 @@ def magazayi_bastan_basa_tara(manuel_mod=False, message_object=None):
                     "stok_adet": str(stok_adet)
                 }
 
-                if os.path.exists("hafiza_ilk_kurulum.txt") == False and manuel_mod == False:
-                    # Bot ilk kez ayağa kalktığında yüzlerce eski ürünü Telegram'a yığmasın diye hafızaya sessizce alır
+                # İlk sessiz kurulum kontrolü
+                if os.path.exists("hafiza_kuruldu.txt") == False and manuel_mod == False:
                     urun_hafizasi[isim] = fiyat_float
                     continue
 
-                if isim not in urun_hafizasi:
+                if list(urun_hafizasi.keys()) and isim not in urun_hafizasi:
                     urun_hafizasi[isim] = fiyat_float
-                    if manuel_mod:
-                        telegram_tasarimli_mesaj_gonder(message_object.chat.id, urun_kartı, durum_mesaji="🆕 MAĞAZAYA YENİ EKLENMİŞ!")
-                        yeni_bulunan_sayisi += 1
-                        time.sleep(1.5)
-                else:
+                    hedef_chat = message_object.chat.id if manuel_mod else CHAT_ID
+                    telegram_tasarimli_mesaj_gonder(hedef_chat, urun_kartı, durum_mesaji="🆕 MAĞAZAYA YENİ EKLENMİŞ!")
+                    yeni_bulunan_sayisi += 1
+                    time.sleep(1.5)
+                elif isim in urun_hafizasi:
                     eski_fiyat = urun_hafizasi[isim]
                     if fiyat_float < eski_fiyat:
                         indirim_orani = int(((eski_fiyat - fiyat_float) / eski_fiyat) * 100)
@@ -155,13 +157,12 @@ def magazayi_bastan_basa_tara(manuel_mod=False, message_object=None):
         current_page += 1
         time.sleep(2)
     
-    # İlk sessiz kurulum bittiğinde bir işaret dosyası koyalım
-    if manuel_mod == False and os.path.exists("hafiza_ilk_kurulum.txt") == False:
-        with open("hafiza_ilk_kurulum.txt", "w") as f:
+    if manuel_mod == False and os.path.exists("hafiza_kuruldu.txt") == False:
+        with open("hafiza_kuruldu.txt", "w") as f:
             f.write("ok")
 
     if manuel_mod and message_object and yeni_bulunan_sayisi == 0:
-        bot.send_message(message_object.chat.id, "✅ Tarama tamamlandı. Son kontrolden bu yana yeni eklenen veya fiyatı düşen bir ürün tespit edilmedi.")
+        bot.send_message(message_object.chat.id, "✅ Tarama tamamlandı. Yeni bir fırsat ürünü veya fiyat düşüşü tespit edilmedi.")
 
 def otomatik_kontrol_dongusu():
     while True:
@@ -176,20 +177,16 @@ def manuel_kontrol(message):
     Thread(target=magazayi_bastan_basa_tara, args=(True, message)).start()
 
 if __name__ == "__main__":
-    print("Zırhlandırılmış kararlı Amazon botu aktif...")
+    print("Maksimum toleranslı Amazon botu başlatılıyor...")
     
-    # Arka plandaki 30 dakikalık otomatik tarama döngüsünü başlatır
     t = Thread(target=otomatik_kontrol_dongusu)
     t.daemon = True
     t.start()
     
-    print("🚀 Telegram API bağlantısı kuruluyor...")
-    
-    # infinity_polling kütüphanenin en kararlı sürümüdür.
-    # Çakışma durumunda (409) hata fırlatıp çökmek yerine, 
-    # bağlantıyı kendi içinde otomatik olarak sıfırlayıp pürüzsüzce devam eder.
-    bot.infinity_polling(
-        timeout=20, 
-        long_polling_timeout=5,
-        logger_level=50 # Hata loglarının konsolu boğmasını engeller
-    )
+    # 409 ve Timeout hatalarına karşı sonsuz dinleme zırhı
+    while True:
+        try:
+            bot.infinity_polling(timeout=30, long_polling_timeout=10)
+        except Exception as e:
+            print(f"Kritik hata yakalandı, sistem 5 saniye içinde kendini onaracak: {e}")
+            time.sleep(5)
