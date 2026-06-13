@@ -183,18 +183,10 @@ def manuel_kontrol(message):
 if __name__ == "__main__":
     print("Dinamik stok destekli Amazon botu aktif...")
     
-    # Arka plandaki 30 dakikalık otomatik tarama döngüsünü başlatır
+    # Arka plandaki otomatik tarama döngüsünü başlatır
     t = Thread(target=otomatik_kontrol_dongusu)
     t.daemon = True
     t.start()
     
-    try:
-        # Hata kodu 409 (Conflict) çakışmasını önlemek için 
-        # bot başlamadan önce Telegram sunucusunda biriken eski istekleri temizler
-        bot.skip_updates()
-        print("Eski Telegram kuyruğu başarıyla temizlendi.")
-    except Exception as e:
-        print(f"Kuyruk temizlenirken küçük bir uyarı oluştu (Normaldir): {e}")
-    
-    # Botu döngüsel dinleme moduna al (Hatalı parametre tamamen kaldırıldı)
+    # Botu döngüsel dinleme moduna al (En sade ve hatasız çalışan doğrudan tetikleme)
     bot.infinity_polling(timeout=10, long_polling_timeout=5)
