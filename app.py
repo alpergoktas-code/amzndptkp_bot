@@ -1,48 +1,34 @@
 import os
 import time
-import random
 import requests
 from bs4 import BeautifulSoup
 from threading import Thread
 import telebot
 
+# Çevre değişkenleri
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+SCRAPER_KEY = os.getenv("SCRAPERAPI_KEY")
 
 bot = telebot.TeleBot(TOKEN)
 
-AMAZON_URL = "https://www.amazon.com.tr/s?me=A215JX4S9CANSO&marketplaceID=A33AVAJ2PDY3EV"
-
-# Amazon'u yanıltmak için farklı tarayıcı kimlikleri listesi
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
-]
+# Hedef satıcının arama linki
+TARGET_URL = "https://www.amazon.com.tr/s?me=A215JX4S9CANSO&marketplaceID=A33AVAJ2PDY3EV"
 
 urun_hafizasi = {}
 
-def get_amazon_page():
-    """Amazon'dan güvenli bir şekilde veri çekmeye çalışan fonksiyon"""
-    session = requests.Session()
+def get_amazon_page_via_proxy():
+    """ScraperAPI kullanarak Amazon engelini aşan fonksiyon"""
+    # Eğer Railway'e API key girilmediyse düz istek atmayı dener (Yedek plan)
+    if not SCRAPER_KEY:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        return requests.get(TARGET_URL, headers=headers, timeout=20)
     
-    # Gerçekçi tarayıcı başlıkları (Headers)
-    headers = {
-        "User-Agent": random.choice(USER_AGENTS),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-        "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-        "Referer": "https://www.google.com/"
-    }
+    # ScraperAPI entegrasyonu (country_code=tr ile Türkiye IP'si simüle edilir)
+    proxy_url = f"http://api.scraperapi.com?api_key={SCRAPER_KEY}&url={TARGET_URL}&country_code=tr"
     
-    # İsteği göndermeden önce 1-3 saniye arası rastgele bekle (İnsansı hareket)
-    time.sleep(random.uniform(1.0, 3.0))
-    
-    response = session.get(AMAZON_URL, headers=headers, timeout=20)
+    # ScraperAPI arkada proxy döndürdüğü için süre uzayabilir, timeout'u yüksek tutuyoruz
+    response = requests.get(proxy_url, timeout=60)
     return response
 
 def amazon_kontrol():
@@ -51,21 +37,20 @@ def amazon_kontrol():
     guncelleme_var = False
     
     try:
-        response = get_amazon_page()
+        response = get_amazon_page_via_proxy()
         
-        if response.status_code == 503:
-            return "⚠️ Amazon şu an yoğun veya bot korumasına takıldık (Hata: 503). Bir sonraki tur tekrar denenecek."
-        elif response.status_code != 200:
-            return f"Amazon'a erişilemedi (Hata kodu: {response.status_code})"
+        if response.status_code != 200:
+            return f"⚠️ Proxy servisi hata döndürdü (Hata kodu: {response.status_code})"
             
         soup = BeautifulSoup(response.content, "html.parser")
+        
+        # Amazon arama sonuçlarındaki ürün blokları
         urunler = soup.find_all("div", {"data-component-type": "s-search-result"})
         
         if not urunler:
-            # Amazon bazen 200 döner ama sayfa içeriğini boş verir (Robot kontrolü sayfası)
-            if "api-services-support@amazon.com" in response.text or "captcha" in response.text.lower():
-                return "🤖 Amazon doğrulama (Captcha) duvarına denk geldik."
-            return "Şu anda listelenen ürün bulunamadı veya sayfa yapısı değişti."
+            if "captcha" in response.text.lower() or "robot" in response.text.lower():
+                return "🤖 Proxy'ye rağmen Captcha duvarına takılındı. (Nadir durum)"
+            return "Şu anda satıcıya ait listelenen aktif ürün bulunamadı."
 
         for urun in urunler[:10]:
             try:
@@ -93,7 +78,7 @@ def amazon_kontrol():
                     guncelleme_var = True
                 elif fiyat and urun_hafizasi[isim] and fiyat < urun_hafizasi[isim]:
                     eski_fiyat = urun_hafizasi[isim]
-                    urun_hafizasi[isim] = fiyat
+                    urun_hafizasi[isim] = float(fiyat)
                     mesaj_metni += f"📉 **FİYAT DÜŞTÜ:** {isim}\n❌ Eski: {eski_fiyat} TL -> ✅ Yeni: {fiyat} TL\n🔗 [Ürüne Git]({link})\n\n"
                     guncelleme_var = True
             except Exception:
@@ -114,30 +99,29 @@ def otomatik_kontrol():
             try:
                 bot.send_message(CHAT_ID, sonuc, parse_mode="Markdown", disable_web_page_preview=True)
             except Exception as e:
-                print("Mesaj gönderme hatası:", e)
+                print("Telegram gönderme hatası:", e)
         
-        # 30 dakika beklerken de küçük bir esneklik payı bırakalım (Tam 1800 saniye olmasın)
-        bekleme_suresi = 1800 + random.randint(-60, 60)
-        time.sleep(bekleme_suresi)
+        # 30 dakika (1800 saniye) bekle
+        time.sleep(1800)
 
 @bot.message_handler(commands=['kontrol'])
 def manuel_kontrol(message):
-    bot.reply_to(message, "🔄 Amazon Depo kontrol ediliyor, lütfen bekleyin...")
+    bot.reply_to(message, "🔄 Güvenli hat üzerinden Amazon kontrol ediliyor, bu işlem 10-15 saniye sürebilir...")
     
     try:
-        response = get_amazon_page()
-        if response.status_code == 503:
-            bot.send_message(message.chat.id, "❌ Amazon botu engelledi (503). Lütfen birkaç dakika sonra tekrar deneyin.")
+        response = get_amazon_page_via_proxy()
+        if response.status_code != 200:
+            bot.send_message(message.chat.id, f"❌ Sayfa çekilemedi. Proxy hatası: {response.status_code}")
             return
             
         soup = BeautifulSoup(response.content, "html.parser")
         urunler = soup.find_all("div", {"data-component-type": "s-search-result"})
         
         if not urunler:
-            bot.send_message(message.chat.id, "⚠️ Ürün bulunamadı veya Captcha korumasına takıldı.")
+            bot.send_message(message.chat.id, "⚠️ Aktif ürün bulunamadı veya hâlâ engelleniyor.")
             return
             
-        rapor = "📊 **Anlık Amazon Depo Listesi:**\n\n"
+        rapor = "📊 **Anlık Satıcı Ürün Listesi:**\n\n"
         for urun in urunler[:5]:
             isim = urun.find("h2").text.strip()
             fiyat_tam = urun.find("span", {"class": "a-price-whole"})
@@ -147,10 +131,10 @@ def manuel_kontrol(message):
         
         bot.send_message(message.chat.id, rapor, parse_mode="Markdown", disable_web_page_preview=True)
     except Exception as e:
-        bot.send_message(message.chat.id, f"Hata: {str(e)}")
+        bot.send_message(message.chat.id, f"Hata oluştu: {str(e)}")
 
 if __name__ == "__main__":
-    print("Bot aktif...")
+    print("Bot güvenli proxy moduyla başlatıldı...")
     t = Thread(target=otomatik_kontrol)
     t.daemon = True
     t.start()
