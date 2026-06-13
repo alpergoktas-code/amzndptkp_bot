@@ -182,7 +182,11 @@ def manuel_kontrol(message):
 
 if __name__ == "__main__":
     print("Dinamik stok destekli Amazon botu aktif...")
+    
+    # Arka plan döngüsünü başlat
     t = Thread(target=otomatik_kontrol_dongusu)
     t.daemon = True
     t.start()
-    bot.infinity_polling(timeout=10, long_polling_timeout=5)
+    
+    # skip_pending_updates=True: Başlangıçtaki tüm eski çakışmaları ve biriken mesajları temizler
+    bot.infinity_polling(timeout=10, long_polling_timeout=5, skip_pending_updates=True)
