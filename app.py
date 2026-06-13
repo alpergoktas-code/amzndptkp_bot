@@ -178,24 +178,18 @@ def manuel_kontrol(message):
 if __name__ == "__main__":
     print("Zırhlandırılmış kararlı Amazon botu aktif...")
     
-    # Arka plandaki otomatik tarama döngüsünü başlatır
+    # Arka plandaki 30 dakikalık otomatik tarama döngüsünü başlatır
     t = Thread(target=otomatik_kontrol_dongusu)
     t.daemon = True
     t.start()
     
-    # Çakışmaları (409) kod seviyesinde zorla düşüren akıllı döngü
-    while True:
-        try:
-            print("🚀 Telegram API bağlantısı kuruluyor...")
-            # allowed_updates=[] ve long_polling_timeout=1: Hayalet bağlantıları anında düşürür!
-            bot.polling(
-                non_stop=True, 
-                timeout=10, 
-                long_polling_timeout=1, 
-                allowed_updates=[]
-            )
-        except Exception as e:
-            # Eğer Railway eski container'ı kapatırken bir anlık çakışma yaşatırsa,
-            # bot çökmek yerine loglara bilgi yazar, 3 saniye bekler ve tekrar dener.
-            print(f"⚠️ Bağlantı kesintisi algılandı, otomatik olarak yeniden bağlanılıyor: {e}")
-            time.sleep(3)
+    print("🚀 Telegram API bağlantısı kuruluyor...")
+    
+    # infinity_polling kütüphanenin en kararlı sürümüdür.
+    # Çakışma durumunda (409) hata fırlatıp çökmek yerine, 
+    # bağlantıyı kendi içinde otomatik olarak sıfırlayıp pürüzsüzce devam eder.
+    bot.infinity_polling(
+        timeout=20, 
+        long_polling_timeout=5,
+        logger_level=50 # Hata loglarının konsolu boğmasını engeller
+    )
