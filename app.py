@@ -11,7 +11,9 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 SCRAPER_KEY = os.getenv("SCRAPERAPI_KEY")
 
-bot = telebot.TeleBot(TOKEN, threaded=True)
+# Çakışmaları en aza indirmek için threaded=False yapıyoruz.
+# Arka plan işlemlerini zaten kendimiz Thread ile yönettiğimiz için bu çok daha güvenlidir.
+bot = telebot.TeleBot(TOKEN, threaded=False)
 
 BASE_URL = "https://www.amazon.com.tr/Amazon-Depo/s?i=warehouse-deals&srs=44219324031&bbn=44219324031&rh=n%3A44219324031&fs=true"
 
@@ -31,7 +33,6 @@ def get_amazon_page(page_number):
         return None
 
 def telegram_tasarimli_mesaj_gonder(chat_id, urun_bilgisi, durum_mesaji="🆕 YENİ ÜRÜN BULDUM!"):
-    # Telegram mesajına stok adet bilgisini de ekledik
     stok_bilgisi = f"📦 <b>Depo Stoğu:</b> {urun_bilgisi['stok_adet']} Adet\n" if urun_bilgisi.get('stok_adet') else ""
     
     mesaj_metni = (
@@ -55,33 +56,20 @@ def telegram_tasarimli_mesaj_gonder(chat_id, urun_bilgisi, durum_mesaji="🆕 YE
         print(f"Telegram gönderim hatası: {e}")
 
 def fiyati_resimden_oku(urun_soup):
-    """
-    Değişken stok sayılarını (1, 2, 3 ikinci el ürün) düzenli ifadelerle (Regex)
-    yakalar, hem net fiyatı hem de güncel stok adedini döner.
-    """
     try:
         fiyat_linkleri = urun_soup.find_all("a", class_="a-link-normal")
         for link in fiyat_linkleri:
             metin = link.text.strip()
-            
-            # İçinde fiyat ve ikinci el/seçenek ifadesi geçen her şeyi yakala
             if ("TL" in metin or "\u20ba" in metin) and ("ikinci el" in metin.lower() or "seçenekleri" in metin.lower()):
-                
-                # Regex ile metnin içindeki stok sayısını dinamik olarak bulalım (Örn: '3 ikinci el' içindeki 3'ü alır)
                 stok_bul = re.search(r'(\d+)\s+ikinci\s+el', metin.lower())
                 stok_adet = stok_bul.group(1) if stok_bul else "1"
-                
-                # Parantez öncesindeki fiyat kısmını temizce ayıkla
                 if "(" in metin:
                     metin = metin.split("(")[0].strip()
-                
-                # TL ibarelerini temizle ve float'a çevir
                 fiyat_clean = metin.replace("TL", "").replace("\u20ba", "").replace(".", "").replace(",", ".").strip()
                 return metin, float(fiyat_clean), stok_adet
     except:
         pass
     
-    # Yedek Plan
     try:
         fiyat_kutusu = urun_soup.find("span", {"class": "a-price"})
         if fiyat_kutusu:
@@ -120,10 +108,8 @@ def magazayi_bastan_basa_tara(manuel_mod=False, message_object=None):
                 if not isim_etiketi: continue
                 isim = isim_etiketi.text.strip()
                 
-                # Güncellenen fonksiyondan stok adet bilgisini de alıyoruz
                 fiyat_str, fiyat_float, stok_adet = fiyati_resimden_oku(urun)
-                if not fiyat_float: 
-                    continue
+                if not fiyat_float: continue
 
                 gorsel_etiketi = urun.find("img", {"class": "s-image"})
                 gorsel_url = gorsel_etiketi["src"] if gorsel_etiketi else None
@@ -138,6 +124,11 @@ def magazayi_bastan_basa_tara(manuel_mod=False, message_object=None):
                     "link": link,
                     "stok_adet": str(stok_adet)
                 }
+
+                if os.path.exists("hafiza_ilk_kurulum.txt") == False and manuel_mod == False:
+                    # Bot ilk kez ayağa kalktığında yüzlerce eski ürünü Telegram'a yığmasın diye hafızaya sessizce alır
+                    urun_hafizasi[isim] = fiyat_float
+                    continue
 
                 if isim not in urun_hafizasi:
                     urun_hafizasi[isim] = fiyat_float
@@ -158,13 +149,17 @@ def magazayi_bastan_basa_tara(manuel_mod=False, message_object=None):
                         time.sleep(1.5)
                     else:
                         urun_hafizasi[isim] = fiyat_float
-
-            except Exception:
+            except:
                 continue
             
         current_page += 1
         time.sleep(2)
-        
+    
+    # İlk sessiz kurulum bittiğinde bir işaret dosyası koyalım
+    if manuel_mod == False and os.path.exists("hafiza_ilk_kurulum.txt") == False:
+        with open("hafiza_ilk_kurulum.txt", "w") as f:
+            f.write("ok")
+
     if manuel_mod and message_object and yeni_bulunan_sayisi == 0:
         bot.send_message(message_object.chat.id, "✅ Tarama tamamlandı. Son kontrolden bu yana yeni eklenen veya fiyatı düşen bir ürün tespit edilmedi.")
 
@@ -181,12 +176,16 @@ def manuel_kontrol(message):
     Thread(target=magazayi_bastan_basa_tara, args=(True, message)).start()
 
 if __name__ == "__main__":
-    print("Dinamik stok destekli Amazon botu aktif...")
+    print("Zırhlandırılmış kararlı Amazon botu aktif...")
     
-    # Arka plandaki otomatik tarama döngüsünü başlatır
     t = Thread(target=otomatik_kontrol_dongusu)
     t.daemon = True
     t.start()
     
-    # Botu döngüsel dinleme moduna al (En sade ve hatasız çalışan doğrudan tetikleme)
-    bot.infinity_polling(timeout=10, long_polling_timeout=5)
+    # 409 Conflict hatalarını durdurmak için döngüyü kontrollü ve tek kanallı başlatıyoruz
+    while True:
+        try:
+            bot.polling(non_stop=True, timeout=20, long_polling_timeout=10)
+        except Exception as e:
+            print(f"Polling kilitlenme koruması tetiklendi, 5 saniye sonra otomatik çakışma çözülecek: {e}")
+            time.sleep(5)
