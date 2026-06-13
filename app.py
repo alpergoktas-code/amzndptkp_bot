@@ -178,14 +178,24 @@ def manuel_kontrol(message):
 if __name__ == "__main__":
     print("Zırhlandırılmış kararlı Amazon botu aktif...")
     
+    # Arka plandaki otomatik tarama döngüsünü başlatır
     t = Thread(target=otomatik_kontrol_dongusu)
     t.daemon = True
     t.start()
     
-    # 409 Conflict hatalarını durdurmak için döngüyü kontrollü ve tek kanallı başlatıyoruz
+    # Çakışmaları (409) kod seviyesinde zorla düşüren akıllı döngü
     while True:
         try:
-            bot.polling(non_stop=True, timeout=20, long_polling_timeout=10)
+            print("🚀 Telegram API bağlantısı kuruluyor...")
+            # allowed_updates=[] ve long_polling_timeout=1: Hayalet bağlantıları anında düşürür!
+            bot.polling(
+                non_stop=True, 
+                timeout=10, 
+                long_polling_timeout=1, 
+                allowed_updates=[]
+            )
         except Exception as e:
-            print(f"Polling kilitlenme koruması tetiklendi, 5 saniye sonra otomatik çakışma çözülecek: {e}")
-            time.sleep(5)
+            # Eğer Railway eski container'ı kapatırken bir anlık çakışma yaşatırsa,
+            # bot çökmek yerine loglara bilgi yazar, 3 saniye bekler ve tekrar dener.
+            print(f"⚠️ Bağlantı kesintisi algılandı, otomatik olarak yeniden bağlanılıyor: {e}")
+            time.sleep(3)
