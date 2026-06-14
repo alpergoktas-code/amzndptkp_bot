@@ -8,16 +8,23 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import re
 import logging
 
+# Değişkenleri sistemden çekiyoruz
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 SCRAPER_KEY = os.getenv("SCRAPERAPI_KEY")
 
+# 🚨 KRİTİK GÜVENLİK KONTROLÜ: 
+# Eğer Railway derleme esnasında uyarı verip bu şifreleri boş bıraktıysa loglarda görelim.
+if not TOKEN or not CHAT_ID:
+    print("❌ HATA: TELEGRAM_TOKEN veya TELEGRAM_CHAT_ID Railway Variables paneline eklenmemiş ya da boş dönüyor!")
+if not SCRAPER_KEY:
+    print("⚠️ UYARI: SCRAPERAPI_KEY bulunamadı, bot Amazon'a proxy olmadan (User-Agent ile) direkt bağlanmayı deneyecek.")
+
 bot = telebot.TeleBot(TOKEN, threaded=False)
 telebot.logger.setLevel(logging.CRITICAL)
 
+# Mağaza linki ve hafıza değişkenleri aynen devam ediyor...
 BASE_URL = "https://www.amazon.com.tr/Amazon-Depo/s?i=warehouse-deals&srs=44219324031&bbn=44219324031&rh=n%3A44219324031&fs=true"
-
-# Railway sıfırlansa bile ürünleri unutmaması için basit bir çalışma zamanı hafızası
 urun_hafizasi = {}
 ilk_kurulum_bitti = False
 
