@@ -40,9 +40,6 @@ signal.signal(signal.SIGTERM, temizce_kapat)
 signal.signal(signal.SIGINT, temizce_kapat)
 
 
-# Kredi tasarrufu için maksimum taranacak sayfa sayısı
-# 5 sayfa = 120 ürün, yeni eklenenler zaten listenin başında çıkar
-MAX_SAYFA = 5
 
 def get_amazon_page(page_number):
     """ScraperAPI üzerinden Amazon sayfasını çeker"""
@@ -160,16 +157,13 @@ def magazayi_bastan_basa_tara(manuel_mod=False, message_object=None):
         current_page += 1
         time.sleep(2)
 
-        # Manuel modda veya sayfa limitine ulaşıldığında dur
-        if manuel_mod or current_page > MAX_SAYFA:
-            break
 
     if not manuel_mod and not ilk_kurulum_bitti:
         ilk_kurulum_bitti = True
         bot.send_message(
             CHAT_ID,
             "✅ Bot başarıyla pusuya yattı! Amazon Depo hafızaya alındı, "
-            "anlık indirimler ve yeni ürünler (ilk 120 ürün) 90 dakikada bir otomatik taranacak.",
+            "anlık indirimler ve yeni ürünler 15 dakikada bir otomatik taranacak.",
         )
 
     if manuel_mod and yeni_bulunan_sayisi == 0:
@@ -205,7 +199,7 @@ def otomatik_kontrol_dongusu():
             magazayi_bastan_basa_tara(manuel_mod=False)
         except Exception:
             pass
-        time.sleep(5400)  # 90 dakikada bir otomatik çalışır (ScraperAPI kredi tasarrufu)
+        time.sleep(900)  # 15 dakikada bir otomatik çalışır
 
 
 @bot.message_handler(commands=["kontrol"])
