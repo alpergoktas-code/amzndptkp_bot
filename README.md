@@ -44,3 +44,33 @@ Railway'in güncellemeler sırasında çift bot çalıştırıp Telegram hattın
     "strategy": "RECREATE"
   }
 }
+
+🕹️ Kullanım Komutları
+Bot iki farklı modda çalışır:
+
+Otomatik Mod (Arka Plan): Her 30 dakikada bir Amazon Depo'yu baştan sona tarar. Sadece tamamen yeni bir ürün eklendiğinde veya bir ürünün fiyatı düştüğünde Telegram'a bildirim atar.
+
+Manuel Mod (/kontrol): Canınız istediği an Telegram üzerinden bota /kontrol komutunu göndererek botu dürtebilirsiniz. Bot anlık olarak mağazayı tarar ve son durumdaki fırsatları ekrana döker.
+
+📦 Telegram Bildirim Şablonu
+Bot, yakaladığı fırsatları Telegram'a şu formatta fotoğraflı kartlar halinde iletir:
+
+🆕 MAĞAZAYA YENİ EKLENMİŞ!
+
+Tommy Hilfiger TJM 90S VINTAGE LA 55 TEE Erkek
+
+🏷 1.101,83 TL
+📦 Depo Stoğu: 1 Adet
+🛍 Amazon
+
+[ 🔗 Aç (Buton) ]
+
+📋 Gereksinimler (requirements.txt)
+pyTelegramBotAPI==4.12.0
+
+beautifulsoup4==4.12.2
+
+requests==2.31.0
+
+⚖️ Lisans
+Bu proje MIT Lisansı ile lisanslanmıştır. Dilediğiniz gibi geliştirebilir, çatallayabilir (fork) veya kişisel ihtiyaçlarınıza göre optimize edebilirsiniz.
