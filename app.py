@@ -11,7 +11,6 @@ import re
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-SCRAPER_KEY = os.getenv("SCRAPERAPI_KEY")
 
 # Çakışmaları önlemek için threaded=False yapıyoruz, hat yönetimi tek elden akacak
 bot = telebot.TeleBot(TOKEN, threaded=False)
@@ -40,17 +39,27 @@ signal.signal(signal.SIGTERM, temizce_kapat)
 signal.signal(signal.SIGINT, temizce_kapat)
 
 
+# Tarayıcıyı taklit eden başlıklar — Amazon bot tespitini zorlaştırır
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+}
+
 def get_amazon_page(page_number):
-    """ScraperAPI ile Amazon sayfasını 60 saniye toleransla çeker"""
+    """Direkt Amazon isteği — gerçek tarayıcı başlıklarıyla bot tespitini atlatır"""
     page_url = f"{BASE_URL}&page={page_number}"
     try:
-        if not SCRAPER_KEY:
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-            return requests.get(page_url, headers=headers, timeout=15)
-
-        proxy_url = f"http://api.scraperapi.com?api_key={SCRAPER_KEY}&url={page_url}&country_code=tr"
-        return requests.get(proxy_url, timeout=60)
-    except Exception:
+        response = requests.get(page_url, headers=HEADERS, timeout=20)
+        # Amazon bazen 200 yerine 503 veya CAPTCHA sayfası döner; bunu logla
+        if response.status_code != 200:
+            print(f"[Uyarı] Sayfa {page_number} HTTP {response.status_code} döndü")
+        return response
+    except Exception as e:
+        print(f"[Hata] Sayfa {page_number} isteği başarısız: {e}")
         return None
 
 
@@ -96,12 +105,14 @@ def magazayi_bastan_basa_tara(manuel_mod=False, message_object=None):
     while True:
         response = get_amazon_page(current_page)
         if not response or response.status_code != 200:
+            print(f"[Tarama] Sayfa {current_page} DURDU — HTTP: {response.status_code if response else 'Bağlantı hatası'}")
             break
 
         soup = BeautifulSoup(response.content, "html.parser")
         urunler = soup.find_all("div", {"data-component-type": "s-search-result"})
 
         if not urunler:
+            print(f"[Tarama] Sayfa {current_page} DURDU — Ürün div'i bulunamadı (Amazon bot koruması olabilir)")
             break
 
         for urun in urunler:
