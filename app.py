@@ -11,6 +11,7 @@ import re
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+SCRAPER_KEY = os.getenv("SCRAPERAPI_KEY")
 
 # Çakışmaları önlemek için threaded=False yapıyoruz, hat yönetimi tek elden akacak
 bot = telebot.TeleBot(TOKEN, threaded=False)
@@ -39,22 +40,16 @@ signal.signal(signal.SIGTERM, temizce_kapat)
 signal.signal(signal.SIGINT, temizce_kapat)
 
 
-# Tarayıcıyı taklit eden başlıklar — Amazon bot tespitini zorlaştırır
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-}
+# Kredi tasarrufu için maksimum taranacak sayfa sayısı
+# 5 sayfa = 120 ürün, yeni eklenenler zaten listenin başında çıkar
+MAX_SAYFA = 5
 
 def get_amazon_page(page_number):
-    """Direkt Amazon isteği — gerçek tarayıcı başlıklarıyla bot tespitini atlatır"""
+    """ScraperAPI üzerinden Amazon sayfasını çeker"""
     page_url = f"{BASE_URL}&page={page_number}"
     try:
-        response = requests.get(page_url, headers=HEADERS, timeout=20)
-        # Amazon bazen 200 yerine 503 veya CAPTCHA sayfası döner; bunu logla
+        proxy_url = f"http://api.scraperapi.com?api_key={SCRAPER_KEY}&url={page_url}&country_code=tr"
+        response = requests.get(proxy_url, timeout=60)
         if response.status_code != 200:
             print(f"[Uyarı] Sayfa {page_number} HTTP {response.status_code} döndü")
         return response
@@ -165,8 +160,8 @@ def magazayi_bastan_basa_tara(manuel_mod=False, message_object=None):
         current_page += 1
         time.sleep(2)
 
-        # Manuel modda sadece ilk sayfayı hızlıca raporlayıp yükü azaltalım
-        if manuel_mod:
+        # Manuel modda veya sayfa limitine ulaşıldığında dur
+        if manuel_mod or current_page > MAX_SAYFA:
             break
 
     if not manuel_mod and not ilk_kurulum_bitti:
@@ -174,7 +169,7 @@ def magazayi_bastan_basa_tara(manuel_mod=False, message_object=None):
         bot.send_message(
             CHAT_ID,
             "✅ Bot başarıyla pusuya yattı! Amazon Depo hafızaya alındı, "
-            "anlık indirimler ve yeni ürünler 30 dakikada bir otomatik taranacak.",
+            "anlık indirimler ve yeni ürünler (ilk 120 ürün) 90 dakikada bir otomatik taranacak.",
         )
 
     if manuel_mod and yeni_bulunan_sayisi == 0:
@@ -210,7 +205,7 @@ def otomatik_kontrol_dongusu():
             magazayi_bastan_basa_tara(manuel_mod=False)
         except Exception:
             pass
-        time.sleep(1800)  # 30 dakikada bir otomatik çalışır
+        time.sleep(5400)  # 90 dakikada bir otomatik çalışır (ScraperAPI kredi tasarrufu)
 
 
 @bot.message_handler(commands=["kontrol"])
