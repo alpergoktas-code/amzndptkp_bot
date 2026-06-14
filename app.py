@@ -150,6 +150,7 @@ def magazayi_bastan_basa_tara(manuel_mod=False, message_object=None):
             except Exception:
                 continue
 
+        print(f"[Tarama] Sayfa {current_page} tamamlandi, {len(urunler)} urun islendi.")
         current_page += 1
         time.sleep(2)
 
